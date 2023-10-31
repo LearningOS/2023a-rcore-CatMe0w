@@ -13,7 +13,12 @@ const MICRO_PER_SEC: usize = 1_000_000;
 
 /// Get the current time in ticks
 pub fn get_time() -> usize {
-    time::read()
+    let time = time::read();
+    // I have no idea. If I don't add the next line, the user_lib::get_time would give an 0 in ch3_sleep.
+    // And crushes it with a piece of codes where I may not change in this lab. (at least on my machine)
+    // Maybe my computer is too fast.
+    // println!("get_time: {}", time);
+    time
 }
 
 /// get current time in milliseconds
