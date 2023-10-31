@@ -17,3 +17,5 @@ pushall.sh
 *.bak
 
 user/*
+
+.DS_Store
