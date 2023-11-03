@@ -14,8 +14,11 @@ mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 
+use crate::config::MAX_SYSCALL_NUM;
 use crate::loader::{get_app_data, get_num_app};
+use crate::mm::{MapPermission, VirtAddr};
 use crate::sync::UPSafeCell;
+use crate::timer::get_time_ms;
 use crate::trap::TrapContext;
 use alloc::vec::Vec;
 use lazy_static::*;
@@ -79,6 +82,7 @@ impl TaskManager {
         let mut inner = self.inner.exclusive_access();
         let next_task = &mut inner.tasks[0];
         next_task.task_status = TaskStatus::Running;
+        next_task.task_time = get_time_ms();
         let next_task_cx_ptr = &next_task.task_cx as *const TaskContext;
         drop(inner);
         let mut _unused = TaskContext::zero_init();
@@ -140,6 +144,8 @@ impl TaskManager {
             let mut inner = self.inner.exclusive_access();
             let current = inner.current_task;
             inner.tasks[next].task_status = TaskStatus::Running;
+            inner.tasks[current].task_time = get_time_ms() - inner.tasks[current].task_time;
+            inner.tasks[next].task_time = get_time_ms();
             inner.current_task = next;
             let current_task_cx_ptr = &mut inner.tasks[current].task_cx as *mut TaskContext;
             let next_task_cx_ptr = &inner.tasks[next].task_cx as *const TaskContext;
@@ -152,6 +158,40 @@ impl TaskManager {
         } else {
             panic!("All applications completed!");
         }
+    }
+    // Get the first run time of current `Running` task.
+    fn get_current_time(&self) -> usize {
+        let inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].task_time
+    }
+
+    /// Get all system call counts of current `Running` task.
+    fn get_current_syscall_times(&self) -> [u32; MAX_SYSCALL_NUM] {
+        let inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].task_syscall_times
+    }
+
+    /// Update the specific system call count of current `Running` task.
+    fn update_current_syscall_times(&self, syscall_id: usize) {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].task_syscall_times[syscall_id] += 1;
+    }
+
+    /// Insert a new area into the current `Running` task's memory set.
+    pub fn task_insert_framed_area(&self, start_va: VirtAddr, end_va: VirtAddr, permission: MapPermission) {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].memory_set.insert_framed_area(start_va, end_va, permission);
+    }
+
+    /// Drop an area from the current `Running` task's memory set.
+    pub fn task_drop_framed_area(&self, start_va: VirtAddr, end_va: VirtAddr) -> isize{
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].memory_set.drop_framed_area(start_va, end_va)
     }
 }
 
@@ -201,4 +241,29 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
 /// Change the current 'Running' task's program break
 pub fn change_program_brk(size: i32) -> Option<usize> {
     TASK_MANAGER.change_current_program_brk(size)
+}
+
+/// Get the first run time of current `Running` task.
+pub fn get_current_task_time() -> usize {
+    TASK_MANAGER.get_current_time()
+}
+
+/// Get all system call counts of current `Running` task.
+pub fn get_current_syscall_times() -> [u32; MAX_SYSCALL_NUM] {
+    TASK_MANAGER.get_current_syscall_times()
+}
+
+/// Update the specific system call count of current `Running` task.
+pub fn update_current_syscall_times(syscall_id: usize) {
+    TASK_MANAGER.update_current_syscall_times(syscall_id);
+}
+
+/// Insert a new area into the current `Running` task's memory set.
+pub fn task_insert_framed_area(start_va: VirtAddr, end_va: VirtAddr, permission: MapPermission) {
+    TASK_MANAGER.task_insert_framed_area(start_va, end_va, permission);
+}
+
+/// Drop an area from the current `Running` task's memory set.
+pub fn task_drop_framed_area(start_va: VirtAddr, end_va: VirtAddr) -> isize{
+    TASK_MANAGER.task_drop_framed_area(start_va, end_va)
 }
