@@ -2,13 +2,13 @@
 use alloc::sync::Arc;
 
 use crate::{
-    config::MAX_SYSCALL_NUM,
+    config::{MAX_SYSCALL_NUM, PAGE_SIZE},
+    mm::{translated_pa, VirtAddr, PageTable, StepByOne, MapPermission, translated_refmut, translated_str},
     loader::get_app_data_by_name,
-    mm::{translated_refmut, translated_str},
     task::{
         add_task, current_task, current_user_token, exit_current_and_run_next,
-        suspend_current_and_run_next, TaskStatus,
-    },
+        suspend_current_and_run_next, TaskStatus, get_current_syscall_times, get_current_task_time, task_insert_framed_area, task_drop_framed_area,
+    }, timer::get_time_us,
 };
 
 #[repr(C)]
@@ -117,41 +117,97 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
 /// YOUR JOB: get time with second and microsecond
 /// HINT: You might reimplement it with virtual memory management.
 /// HINT: What if [`TimeVal`] is splitted by two pages ?
-pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
-    trace!(
-        "kernel:pid[{}] sys_get_time NOT IMPLEMENTED",
-        current_task().unwrap().pid.0
-    );
-    -1
+pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
+    trace!("kernel: sys_get_time");
+    let us = get_time_us();
+    // let ts = translated_pa(current_user_token(), ts as usize) as *mut TimeVal;
+    let ts = translated_pa(current_user_token(), ts as usize) as &mut TimeVal;
+    // unsafe {
+        // *ts = TimeVal {
+        //     sec: us / 1_000_000,
+        //     usec: us % 1_000_000,
+        // };
+    // }
+    ts.sec = us / 1_000_000;
+    ts.usec = us % 1_000_000;
+    0
+    
+    // note: alright, the ch3_sleep just can be (always) passed on my computer after I left ch3 with nothing changed...
 }
 
 /// YOUR JOB: Finish sys_task_info to pass testcases
 /// HINT: You might reimplement it with virtual memory management.
 /// HINT: What if [`TaskInfo`] is splitted by two pages ?
 pub fn sys_task_info(_ti: *mut TaskInfo) -> isize {
-    trace!(
-        "kernel:pid[{}] sys_task_info NOT IMPLEMENTED",
-        current_task().unwrap().pid.0
-    );
-    -1
+    trace!("kernel: sys_task_info");
+    let ti = translated_pa(current_user_token(), _ti as usize) as &mut TaskInfo;
+    // unsafe {
+    //     (*ti).status = TaskStatus::Running;
+    //     (*ti).syscall_times = get_current_syscall_times();
+    //     (*ti).time = get_current_task_time();
+    // }
+    ti.status = TaskStatus::Running;
+    ti.syscall_times = get_current_syscall_times();
+    ti.time = get_current_task_time();
+    0
 }
 
-/// YOUR JOB: Implement mmap.
-pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
-    trace!(
-        "kernel:pid[{}] sys_mmap NOT IMPLEMENTED",
-        current_task().unwrap().pid.0
-    );
-    -1
+// YOUR JOB: Implement mmap.
+pub fn sys_mmap(start: usize, len: usize, port: usize) -> isize {
+    trace!("kernel: sys_mmap");
+    let start_va = VirtAddr::from(start);
+    if port & !0x7 != 0 {
+        return -1;
+    }
+    if port & 0x7 == 0 {
+        return -1;
+    }
+    if start_va.page_offset() != 0 {
+        return -1;
+    }
+    let mut vpn_start = start_va.floor();
+    let mut end_va = VirtAddr::from(start + len - 1);
+    let pt = PageTable::from_token(current_user_token());
+    let required_pages = (len + PAGE_SIZE - 1) / PAGE_SIZE;
+    for _ in 0..required_pages {
+        // let pte = page_table.translate(vpn_start + i).unwrap();
+        let pte = pt.translate(vpn_start);
+        if pte.is_some() {
+            if pte.unwrap().is_valid() {
+                return -1;
+            }
+        }
+        vpn_start.step();
+    }
+    if end_va.page_offset() == 0 {
+        // va_end.step();
+        end_va = VirtAddr::from(end_va.0 + 1);
+    }
+    // let permission = MapPermission::from_bits_truncate(port & 0x7);
+    let mut permission = MapPermission::empty();
+    permission.set(MapPermission::R, port & 0x1 != 0);
+    permission.set(MapPermission::W, port & 0x2 != 0);
+    permission.set(MapPermission::X, port & 0x4 != 0);
+    permission.set(MapPermission::U, true);
+    task_insert_framed_area(start_va, end_va, permission);
+    0
 }
 
-/// YOUR JOB: Implement munmap.
-pub fn sys_munmap(_start: usize, _len: usize) -> isize {
-    trace!(
-        "kernel:pid[{}] sys_munmap NOT IMPLEMENTED",
-        current_task().unwrap().pid.0
-    );
-    -1
+// YOUR JOB: Implement munmap.
+pub fn sys_munmap(start: usize, len: usize) -> isize {
+    trace!("kernel: sys_munmap");
+    let start_va = VirtAddr::from(start);
+    let mut end_va = VirtAddr::from(start + len - 1);
+    if start_va.page_offset() != 0 {
+        return -1;
+    }
+    if end_va.page_offset() == 0 {
+        // va_end.step();
+        end_va = VirtAddr::from(end_va.0 + 1);
+    }
+    task_drop_framed_area(start_va, end_va)
+
+    // my head hurts
 }
 
 /// change data segment size

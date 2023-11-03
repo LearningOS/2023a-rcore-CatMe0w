@@ -7,6 +7,8 @@
 use super::__switch;
 use super::{fetch_task, TaskStatus};
 use super::{TaskContext, TaskControlBlock};
+use crate::config::MAX_SYSCALL_NUM;
+use crate::mm::{VirtAddr, MapPermission};
 use crate::sync::UPSafeCell;
 use crate::trap::TrapContext;
 use alloc::sync::Arc;
@@ -108,4 +110,46 @@ pub fn schedule(switched_task_cx_ptr: *mut TaskContext) {
     unsafe {
         __switch(switched_task_cx_ptr, idle_task_cx_ptr);
     }
+}
+
+
+/// Get the first run time of current `Running` task.
+pub fn get_current_task_time() -> usize {
+    // TASK_MANAGER.get_current_time();
+    current_task().unwrap().inner_exclusive_access().task_time
+}
+
+/// Get all system call counts of current `Running` task.
+pub fn get_current_syscall_times() -> [u32; MAX_SYSCALL_NUM] {
+    // TASK_MANAGER.get_current_syscall_times()
+    current_task().unwrap().inner_exclusive_access().task_syscall_times
+}
+
+/// Update the specific system call count of current `Running` task.
+pub fn update_current_syscall_times(syscall_id: usize) {
+    // TASK_MANAGER.update_current_syscall_times(syscall_id);
+    current_task()
+        .unwrap()
+        .inner_exclusive_access()
+        .task_syscall_times[syscall_id] += 1;
+}
+
+/// Insert a new area into the current `Running` task's memory set.
+pub fn task_insert_framed_area(start_va: VirtAddr, end_va: VirtAddr, permission: MapPermission) {
+    // TASK_MANAGER.task_insert_framed_area(start_va, end_va, permission);
+    current_task()
+        .unwrap()
+        .inner_exclusive_access()
+        .memory_set
+        .insert_framed_area(start_va, end_va, permission);
+}
+
+/// Drop an area from the current `Running` task's memory set.
+pub fn task_drop_framed_area(start_va: VirtAddr, end_va: VirtAddr) -> isize{
+    // TASK_MANAGER.task_drop_framed_area(start_va, end_va)
+    current_task()
+        .unwrap()
+        .inner_exclusive_access()
+        .memory_set
+        .drop_framed_area(start_va, end_va)
 }
