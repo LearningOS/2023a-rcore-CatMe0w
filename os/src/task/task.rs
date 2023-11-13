@@ -1,7 +1,7 @@
 //! Types related to task management & Functions for completely changing TCB
 use crate::config::MAX_SYSCALL_NUM;
 
-use super::TaskContext;
+use super::{TaskContext, BIGSTRIDE};
 use super::{kstack_alloc, pid_alloc, KernelStack, PidHandle};
 use crate::config::TRAP_CONTEXT_BASE;
 use crate::mm::{MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
@@ -76,6 +76,12 @@ pub struct TaskControlBlockInner {
 
     /// The total running time of task
     pub task_time: usize,
+
+    /// stride?!
+    pub stride: isize,
+
+    /// priority?!
+    pub priority: isize,
 }
 
 impl TaskControlBlockInner {
@@ -128,6 +134,8 @@ impl TaskControlBlock {
                     program_brk: user_sp,
                     task_syscall_times: [0; MAX_SYSCALL_NUM],
                     task_time: 0,
+                    stride: 0,
+                    priority: 16,
                 })
             },
         };
@@ -203,6 +211,8 @@ impl TaskControlBlock {
                     program_brk: parent_inner.program_brk,
                     task_syscall_times: [0; MAX_SYSCALL_NUM],
                     task_time: 0,
+                    stride: 0,
+                    priority: 16,
                 })
             },
         });
@@ -248,6 +258,22 @@ impl TaskControlBlock {
             None
         }
     }
+
+    /// AAAAAAAAAAAAAAAAAAAAAAAHHHHHHHHHHHHHHHHH
+    pub fn add_stride(&self) {
+        let mut inner = self.inner_exclusive_access();
+        inner.stride += BIGSTRIDE / inner.priority;
+        // debug!("pid[{}] stride: {} priority: {}", self.pid.0, inner.stride, inner.priority);
+    }
+
+    /// aaaaaaaaaaaaaaaaaa
+    pub fn set_priority(&self, priority: isize) {
+        let mut inner = self.inner_exclusive_access();
+        inner.priority = priority;
+        // debug!("pid[{}] stride: {} priority: {}", self.pid.0, inner.stride, inner.priority);
+    }
+
+    // it works, why
 }
 
 #[derive(Copy, Clone, PartialEq)]

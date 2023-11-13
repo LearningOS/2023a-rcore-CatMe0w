@@ -153,3 +153,13 @@ pub fn task_drop_framed_area(start_va: VirtAddr, end_va: VirtAddr) -> isize{
         .memory_set
         .drop_framed_area(start_va, end_va)
 }
+
+// / Set the priority of current `Running` task.
+// pub fn set_priority(priority: usize) {
+//     current_task()
+//         .unwrap()
+//         .inner_exclusive_access()
+//         .priority = priority;
+// }
+//
+// it does not work, why

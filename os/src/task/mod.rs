@@ -34,8 +34,13 @@ pub use manager::add_task;
 pub use processor::{
     current_task, current_trap_cx, current_user_token, run_tasks, schedule, take_current_task,
     task_insert_framed_area, task_drop_framed_area, get_current_task_time, get_current_syscall_times, update_current_syscall_times,
+    // set_priority,
     Processor,
 };
+
+/// BIGSTRIDE
+pub const BIGSTRIDE: isize = 7355608;
+
 /// Suspend the current 'Running' task and run the next task in task list.
 pub fn suspend_current_and_run_next() {
     // There must be an application running.
